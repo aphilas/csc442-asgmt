@@ -3,7 +3,6 @@ import traceback
 from itertools import combinations
 
 import weka.core.jvm as jvm
-import weka.plot.graph as plot_graph
 from weka.classifiers import Classifier, Evaluation, PredictionOutput
 from weka.core.classes import Random
 from weka.core.converters import Loader
