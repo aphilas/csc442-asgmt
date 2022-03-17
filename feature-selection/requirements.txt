@@ -1,0 +1,6 @@
+matplotlib==3.5.1
+numpy==1.22.3
+Pillow==9.0.1
+pygraphviz==1.9
+python-javabridge==4.0.3
+python-weka-wrapper3==0.2.7
