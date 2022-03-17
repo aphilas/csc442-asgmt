@@ -1,12 +1,16 @@
 import os
 import traceback
 from itertools import combinations
+from typing import Generator, List, Set, Tuple
 
 import weka.core.jvm as jvm
 from weka.classifiers import Classifier, Evaluation, PredictionOutput
 from weka.core.classes import Random
 from weka.core.converters import Loader
 from weka.filters import Filter
+
+# cross-fold validation number of folds
+FOLDS = 5
 
 
 def get_data_dir():
@@ -20,65 +24,68 @@ def get_data_dir():
     return libdir
 
 
-def main():
-    # load dataset
-    iris_file = get_data_dir() + os.sep + "iris.arff"
+def load_dataset(dataset_name: str):
+    """Returns a dataset given it's name in the Weka data directory (without .arff extension)"""
+    file = get_data_dir() + os.sep + dataset_name + ".arff"
     loader = Loader("weka.core.converters.ArffLoader")
-    iris_data = loader.load_file(iris_file)
-    iris_data.class_is_last()
-
-    #! NOTE: 1-based indexing
-    remove_attributes = (1,)
-
-    # filter attributes
-    remove = Filter(
-        classname="weka.filters.unsupervised.attribute.Remove",
-        options=["-R", ",".join(map(str, remove_attributes))],
-    )
-    remove.inputformat(iris_data)
-    filtered_iris = remove.filter(iris_data)
-
-    # evaluate
-    classifier = Classifier(classname="weka.classifiers.bayes.NaiveBayes")
-    evaluation = Evaluation(filtered_iris)
-    pred_output = PredictionOutput(
-        classname="weka.classifiers.evaluation.output.prediction.PlainText",
-        options=["-distribution"],
-    )
-    evaluation.crossvalidate_model(
-        classifier, filtered_iris, 5, Random(42), output=pred_output
-    )
-    print(evaluation.percent_correct)
+    dataset = loader.load_file(file)
+    dataset.class_is_last()
+    return dataset_name, dataset
 
 
-def filter_str(c):
-    return ",".join(map(lambda v: str(v + 1), c))
+def main():
+    datasets = map(load_dataset, ["iris", "diabetes", "glass"])
+
+    classifiers = [
+        ("NaiveBayes", Classifier(classname="weka.classifiers.bayes.NaiveBayes")),
+        ("IBk", Classifier(classname="weka.classifiers.lazy.IBk")),
+    ]
+
+    for dataset_name, dataset in datasets:
+        print(dataset_name, "\n")
+
+        for classifier_name, classifier in classifiers:
+            print(classifier_name)
+            exhaustive_selection(dataset, classifier)
+
+        print("")
 
 
-#! incomplete
-def subsets(n_features):
-    """Returns a list of all combinatons of range(0,n_features) and the respective filter strings for weka
+def exhaustive_selection(dataset, classifier: Classifier, random_seed=42):
+    attributes = dataset.attribute_names()
 
-    Args:
-        n_features (int): number of features
+    for subset, filter in generate_filters(dataset.num_attributes - 1):
+        remove = Filter(
+            classname="weka.filters.unsupervised.attribute.Remove",
+            options=["-R", filter],
+        )
+        remove.inputformat(dataset)
+        filtered = remove.filter(dataset)
+        evaluation = Evaluation(filtered)
+        evaluation.crossvalidate_model(
+            classifier, filtered, FOLDS, Random(random_seed), output=None
+        )
 
-    Returns:
-        (list, list)
-    """
+        print(
+            ", ".join(map(lambda i: attributes[i], subset))
+            + "\t"
+            + str(evaluation.percent_correct)
+        )
 
-    powerset = (
-        combination
-        for k in range(n_features)
-        for combination in combinations(range(n_features), k + 1)
-    )
 
-    all = set(range(0, n_features))
+def filter_str(combination: Set[int]) -> str:
+    # use Weka's 1-based indexing
+    return ",".join(map(lambda v: str(v + 1), combination))
 
-    filters = (
-        all - set(combination) for combination in powerset if all != set(combination)
-    )
 
-    return list(map(lambda c: list(c), powerset)), list(map(filter_str, filters))
+def generate_filters(n) -> List[Tuple[Tuple[int, ...], str]]:
+    """Returns a zip of all combinations of range(0,n) and the respective filter strings for weka"""
+
+    powerset = (c for k in range(n) for c in combinations(range(n), k + 1))
+    every = set(range(n))
+    filters = (every - set(c) for c in powerset)
+
+    return list(zip(powerset, map(filter_str, filters)))
 
 
 if __name__ == "__main__":
