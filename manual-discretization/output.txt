@@ -1,0 +1,4 @@
+classifier	no binning	binning
+IBk	95.0	92.5
+J48	95.0	98.33333333333333
+MLP	100.0	99.16666666666667
